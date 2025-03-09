@@ -1,4 +1,4 @@
-﻿#include "Public/DualSenseLibrary.h"
+#include "Public/DualSenseLibrary.h"
 
 #include <Windows.h>
 #include <iostream>
@@ -23,6 +23,8 @@ TMap<int32, float> UDualSenseLibrary::BatteryLevel;
 TMap<int32, int32> UDualSenseLibrary::LeftTriggerFeedback;
 TMap<int32, int32> UDualSenseLibrary::RightTriggerFeedback;
 TMap<FInputDeviceId, TMap<FName, bool>> UDualSenseLibrary::ButtonStates;
+
+TSet<int32> UDualSenseLibrary::PendingOutputUpdates;
 
 int32 UDualSenseLibrary::ControllersCount = 0;
 TMap<int32, bool> UDualSenseLibrary::IsInitialized;
@@ -183,16 +185,6 @@ void UDualSenseLibrary::SetConnectionIsValid(int32 ControllerId, bool IsValid)
 	IsInitialized[ControllerId] = IsValid;
 }
 
-void UDualSenseLibrary::SendOut(const int32 ControllerId)
-{
-	if (!DeviceContexts.Contains(ControllerId) || !OutputState.Contains(ControllerId))
-	{
-		return;
-	}
-
-	DS5W::setDeviceOutputState(&DeviceContexts[ControllerId], &OutputState[ControllerId]);
-}
-
 int32 UDualSenseLibrary::GetTrirggersFeedback(int32 ControllerId, EControllerHand& HandTrigger)
 {
 	if (!LeftTriggerFeedback.Contains(ControllerId) && !RightTriggerFeedback.Contains(ControllerId))
@@ -242,11 +234,7 @@ bool UDualSenseLibrary::UpdateInput(
 	}
 
 	if (
-		DS5W_SUCCESS
-		(
-			DS5W::getDeviceInputState(&DeviceContexts[InputDeviceId.GetId()], &InputState[InputDeviceId.GetId()])
-		)
-	)
+		DS5W_SUCCESS(DS5W::getDeviceInputState(&DeviceContexts[InputDeviceId.GetId()], &InputState[InputDeviceId.GetId()])))
 	{
 		const auto ButtonsAndDpad = InputState[InputDeviceId.GetId()].buttonsAndDpad;
 		const auto ButtonsA = InputState[InputDeviceId.GetId()].buttonsA;
@@ -269,42 +257,40 @@ bool UDualSenseLibrary::UpdateInput(
 		const bool bCircle = ButtonsAndDpad & DS5W_ISTATE_BTX_CIRCLE;
 		const bool bSquare = ButtonsAndDpad & DS5W_ISTATE_BTX_SQUARE;
 		const bool bTriangle = ButtonsAndDpad & DS5W_ISTATE_BTX_TRIANGLE;
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_FaceButton_Top.GetFName(), bTriangle);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_FaceButton_Bottom.GetFName(), bCross);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_FaceButton_Right.GetFName(), bCircle);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_FaceButton_Left.GetFName(), bSquare);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_FaceButton_Left.GetFName(), bSquare);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::FaceButtonTop, bTriangle);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::FaceButtonBottom, bCross);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::FaceButtonRight, bCircle);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::FaceButtonLeft, bSquare);
 
 		// DPad
 		const bool bDPadUp = ButtonsAndDpad & DS5W_ISTATE_DPAD_UP;
 		const bool bDPadDown = ButtonsAndDpad & DS5W_ISTATE_DPAD_DOWN;
 		const bool bDPadLeft = ButtonsAndDpad & DS5W_ISTATE_DPAD_LEFT;
 		const bool bDPadRight = ButtonsAndDpad & DS5W_ISTATE_DPAD_RIGHT;
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_DPad_Up.GetFName(), bDPadUp);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_DPad_Down.GetFName(), bDPadDown);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_DPad_Left.GetFName(), bDPadLeft);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_DPad_Right.GetFName(), bDPadRight);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::DPadUp, bDPadUp);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::DPadDown, bDPadDown);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::DPadLeft, bDPadLeft);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::DPadRight, bDPadRight);
 
 		// Shoulders
 		const bool bLeftBumper = ButtonsA & DS5W_ISTATE_BTN_A_LEFT_BUMPER;
 		const bool bRightBumper = ButtonsA & DS5W_ISTATE_BTN_A_RIGHT_BUMPER;
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_LeftShoulder.GetFName(), bLeftBumper);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, EKeys::Gamepad_RightShoulder.GetFName(),
-		                 bRightBumper);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::LeftShoulder, bLeftBumper);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::RightShoulder,bRightBumper);
 
 		// Push Stick
 		const bool PushLeftStick = ButtonsA & DS5W_ISTATE_BTN_A_LEFT_STICK;
 		const bool PushRightStick = ButtonsA & DS5W_ISTATE_BTN_A_RIGHT_STICK;
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FName("PS_PushLeftStick"), PushLeftStick);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FName("PS_PushRightStick"), PushRightStick);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::LeftThumb, PushLeftStick);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FGamepadKeyNames::RightThumb, PushRightStick);
 
-
+		
 		// Specials Actions
 		const bool Mic = ButtonsB & DS5W_ISTATE_BTN_B_MIC_BUTTON;
 		const bool TouchPad = ButtonsB & DS5W_ISTATE_BTN_B_PAD_BUTTON;
 		const bool Playstation = ButtonsB & DS5W_ISTATE_BTN_B_PLAYSTATION_LOGO;
 		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FName("PS_Mic"), Mic);
-		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FName("PS_TouchButtom"), TouchPad);
+		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FName("PS_TouchButton"), TouchPad);
 		CheckButtonInput(InMessageHandler, UserId, InputDeviceId, FName("PS_Button"), Playstation);
 
 		const bool Start = ButtonsA & DS5W_ISTATE_BTN_A_MENU;
@@ -332,9 +318,9 @@ bool UDualSenseLibrary::UpdateInput(
 		// Triggers
 		const float TriggerL = InputState[InputDeviceId.GetId()].leftTrigger / 256.0f;
 		const float TriggerR = InputState[InputDeviceId.GetId()].rightTrigger / 256.0f;
-		InMessageHandler.Get().OnControllerAnalog(EKeys::Gamepad_LeftTrigger.GetFName(), UserId, InputDeviceId,
+		InMessageHandler.Get().OnControllerAnalog(FGamepadKeyNames::LeftTriggerAnalog, UserId, InputDeviceId,
 		                                          TriggerL);
-		InMessageHandler.Get().OnControllerAnalog(EKeys::Gamepad_RightTrigger.GetFName(), UserId, InputDeviceId,
+		InMessageHandler.Get().OnControllerAnalog(FGamepadKeyNames::RightTriggerAnalog, UserId, InputDeviceId,
 		                                          TriggerR);
 
 
@@ -349,8 +335,8 @@ bool UDualSenseLibrary::UpdateInput(
 				DS5W::Touch TouchPoint1 = InputState[InputDeviceId.GetId()].touchPoint1;
 				float Touch1X = (2.0f * TouchPoint1.x / MaxX) - 1.0f;
 				float Touch1Y = (2.0f * TouchPoint1.y / MaxY) - 1.0f;
-				InMessageHandler->OnControllerAnalog(FName("Dualsense_Touch1_X"), UserId, InputDeviceId, Touch1X);
-				InMessageHandler->OnControllerAnalog(FName("Dualsense_Touch1_Y"), UserId, InputDeviceId, Touch1Y);
+				InMessageHandler->OnControllerAnalog(FName("DualSense_Touch1_X"), UserId, InputDeviceId, Touch1X);
+				InMessageHandler->OnControllerAnalog(FName("DualSense_Touch1_Y"), UserId, InputDeviceId, Touch1Y);
 			}
 
 			if (EnableTouch2[InputDeviceId.GetId()])
@@ -358,16 +344,13 @@ bool UDualSenseLibrary::UpdateInput(
 				DS5W::Touch TouchPoint2 = InputState[InputDeviceId.GetId()].touchPoint2;
 				float Touch2X = (2.0f * TouchPoint2.x / MaxX) - 1.0f;
 				float Touch2Y = (2.0f * TouchPoint2.y / MaxY) - 1.0f;
-				InMessageHandler->OnControllerAnalog(FName("Dualsense_Touch1_X"), UserId, InputDeviceId, Touch2X);
-				InMessageHandler->OnControllerAnalog(FName("Dualsense_Touch2_Y"), UserId, InputDeviceId, Touch2Y);
+				InMessageHandler->OnControllerAnalog(FName("DualSense_Touch1_X"), UserId, InputDeviceId, Touch2X);
+				InMessageHandler->OnControllerAnalog(FName("DualSense_Touch2_Y"), UserId, InputDeviceId, Touch2Y);
 			}
 		}
 
 
-		if (
-			EnableAccelerometer.Contains(InputDeviceId.GetId()) &&
-			EnableGyroscope.Contains(InputDeviceId.GetId())
-		)
+		if (EnableAccelerometer.Contains(InputDeviceId.GetId()) && EnableGyroscope.Contains(InputDeviceId.GetId()))
 		{
 			DS5W::Vector3 Accelerometer = InputState[InputDeviceId.GetId()].accelerometer;
 			DS5W::Vector3 Gyroscope = InputState[InputDeviceId.GetId()].gyroscope;
@@ -407,6 +390,16 @@ bool UDualSenseLibrary::UpdateInput(
 			}
 		}
 
+		for (int32 ControllerId : PendingOutputUpdates)
+		{
+			if (DeviceContexts.Contains(ControllerId) && OutputState.Contains(ControllerId))
+			{
+				DS5W::setDeviceOutputState(&DeviceContexts[ControllerId], &OutputState[ControllerId]);
+			}
+		}
+
+		PendingOutputUpdates.Empty(); // Clear after processing
+
 		return true;
 	}
 	return false;
@@ -431,9 +424,19 @@ void UDualSenseLibrary::SetVibration(int32 ControllerId, const FForceFeedbackVal
 		return;
 	}
 
-	OutputState[ControllerId].leftRumble = CalculateLeftRumble(Vibration);
-	OutputState[ControllerId].rightRumble = CalculateRightRumble(Vibration);
-	SendOut(ControllerId);
+	unsigned char NewLeftRumble = CalculateLeftRumble(Vibration);
+	unsigned char NewRightRumble = CalculateRightRumble(Vibration);
+
+	if (OutputState[ControllerId].leftRumble == NewLeftRumble &&
+		OutputState[ControllerId].rightRumble == NewRightRumble)
+	{
+		return; // No need to update
+	}
+
+	OutputState[ControllerId].leftRumble = NewLeftRumble;
+	OutputState[ControllerId].rightRumble = NewRightRumble;
+
+	PendingOutputUpdates.Add(ControllerId); // Mark for update
 }
 
 
@@ -451,54 +454,87 @@ unsigned char UDualSenseLibrary::CalculateRightRumble(const FForceFeedbackValues
 
 void UDualSenseLibrary::SetHapticFeedbackValues(int32 ControllerId, int32 Hand, const FHapticFeedbackValues* Values)
 {
-	// Config (L2)
+	if (!OutputState.Contains(ControllerId)) return;
+
+	bool bChanged = false;
+
 	if (Hand == static_cast<int32>(EControllerHand::Left) || Hand == static_cast<int32>(EControllerHand::AnyHand))
 	{
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.frequency = ConvertTo255(Values->Frequency);
+		unsigned char NewFreq = ConvertTo255(Values->Frequency);
+		if (OutputState[ControllerId].leftTriggerEffect.EffectEx.frequency != NewFreq)
+		{
+			OutputState[ControllerId].leftTriggerEffect.EffectEx.frequency = NewFreq;
+			bChanged = true;
+		}
 	}
 
-	// Config (R2)
 	if (Hand == static_cast<int32>(EControllerHand::Right) || Hand == static_cast<int32>(EControllerHand::AnyHand))
 	{
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.frequency = ConvertTo255(Values->Frequency);
+		unsigned char NewFreq = ConvertTo255(Values->Frequency);
+		if (OutputState[ControllerId].rightTriggerEffect.EffectEx.frequency != NewFreq)
+		{
+			OutputState[ControllerId].rightTriggerEffect.EffectEx.frequency = NewFreq;
+			bChanged = true;
+		}
 	}
 
-	SendOut(ControllerId);
+	if (bChanged)
+	{
+		PendingOutputUpdates.Add(ControllerId);
+	}
 }
+
+
 
 void UDualSenseLibrary::SetTriggers(int32 ControllerId, const FInputDeviceProperty* Property)
 {
-	if (Property->Name == FName("InputDeviceTriggerResistance"))
-	{
-		const FInputDeviceTriggerResistanceProperty* Resistance = static_cast<const
-			FInputDeviceTriggerResistanceProperty*>(Property);
-		if (
-			Resistance->AffectedTriggers == EInputDeviceTriggerMask::Left ||
-			Resistance->AffectedTriggers == EInputDeviceTriggerMask::All
-		)
-		{
-			OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
-			OutputState[ControllerId].leftTriggerEffect._u1_raw[0] = ConvertTo255(Resistance->StartPosition, 8);
-			OutputState[ControllerId].leftTriggerEffect._u1_raw[1] = ConvertTo255(Resistance->EndPosition, 8);
-			OutputState[ControllerId].leftTriggerEffect._u1_raw[2] = ConvertTo255(Resistance->StartStrengh, 9);
-			OutputState[ControllerId].leftTriggerEffect._u1_raw[3] = ConvertTo255(Resistance->EndStrengh, 9);
-		}
+    if (!OutputState.Contains(ControllerId)) return;
 
-		if (
-			Resistance->AffectedTriggers == EInputDeviceTriggerMask::Right ||
-			Resistance->AffectedTriggers == EInputDeviceTriggerMask::All
-		)
-		{
-			OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
-			OutputState[ControllerId].rightTriggerEffect._u1_raw[0] = ConvertTo255(Resistance->StartPosition, 8);
-			OutputState[ControllerId].rightTriggerEffect._u1_raw[1] = ConvertTo255(Resistance->EndPosition, 8);
-			OutputState[ControllerId].rightTriggerEffect._u1_raw[2] = ConvertTo255(Resistance->StartStrengh, 9);
-			OutputState[ControllerId].rightTriggerEffect._u1_raw[3] = ConvertTo255(Resistance->EndStrengh, 9);
-		}
-	}
+    bool bChanged = false;
 
-	SendOut(ControllerId);
+    if (Property->Name == FName("InputDeviceTriggerResistance"))
+    {
+        const FInputDeviceTriggerResistanceProperty* Resistance = static_cast<const FInputDeviceTriggerResistanceProperty*>(Property);
+        
+        if (Resistance->AffectedTriggers == EInputDeviceTriggerMask::Left || Resistance->AffectedTriggers == EInputDeviceTriggerMask::All)
+        {
+            if (OutputState[ControllerId].leftTriggerEffect._u1_raw[0] != ConvertTo255(Resistance->StartPosition, 8) ||
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[1] != ConvertTo255(Resistance->EndPosition, 8) ||
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[2] != ConvertTo255(Resistance->StartStrengh, 9) ||
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[3] != ConvertTo255(Resistance->EndStrengh, 9))
+            {
+                OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[0] = ConvertTo255(Resistance->StartPosition, 8);
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[1] = ConvertTo255(Resistance->EndPosition, 8);
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[2] = ConvertTo255(Resistance->StartStrengh, 9);
+                OutputState[ControllerId].leftTriggerEffect._u1_raw[3] = ConvertTo255(Resistance->EndStrengh, 9);
+                bChanged = true;
+            }
+        }
+
+        if (Resistance->AffectedTriggers == EInputDeviceTriggerMask::Right || Resistance->AffectedTriggers == EInputDeviceTriggerMask::All)
+        {
+            if (OutputState[ControllerId].rightTriggerEffect._u1_raw[0] != ConvertTo255(Resistance->StartPosition, 8) ||
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[1] != ConvertTo255(Resistance->EndPosition, 8) ||
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[2] != ConvertTo255(Resistance->StartStrengh, 9) ||
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[3] != ConvertTo255(Resistance->EndStrengh, 9))
+            {
+                OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[0] = ConvertTo255(Resistance->StartPosition, 8);
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[1] = ConvertTo255(Resistance->EndPosition, 8);
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[2] = ConvertTo255(Resistance->StartStrengh, 9);
+                OutputState[ControllerId].rightTriggerEffect._u1_raw[3] = ConvertTo255(Resistance->EndStrengh, 9);
+                bChanged = true;
+            }
+        }
+    }
+
+    if (bChanged)
+    {
+        PendingOutputUpdates.Add(ControllerId);
+    }
 }
+
 
 void UDualSenseLibrary::SetAcceleration(int32 ControllerId, bool bIsAccelerometer)
 {
@@ -540,225 +576,302 @@ void UDualSenseLibrary::SetTouch2(int32 ControllerId, bool bIsGyroscope)
 	EnableTouch2.Add(ControllerId, bIsGyroscope);
 }
 
-void UDualSenseLibrary::ConfigTriggerHapticFeedbackEffect(int32 ControllerId, int32 StartPosition, int32 BeginForce,
-                                                          int32 MiddleForce, int32 EndForce,
-                                                          const EControllerHand& Hand, bool KeepEffect)
+void UDualSenseLibrary::ConfigTriggerHapticFeedbackEffect(
+    int32 ControllerId, 
+    int32 StartPosition, 
+    int32 BeginForce,
+    int32 MiddleForce, 
+    int32 EndForce, 
+    const EControllerHand& Hand, 
+    bool KeepEffect)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		return;
-	}
+    if (!OutputState.Contains(ControllerId)) return;
 
-	if (Hand == EControllerHand::Left || Hand == EControllerHand::AnyHand)
-	{
-		OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::EffectEx;
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.startPosition = ConvertTo255(StartPosition, 8);
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.keepEffect = KeepEffect;
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.beginForce = ConvertTo255(BeginForce, 9);
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.middleForce = ConvertTo255(MiddleForce, 9);
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.endForce = ConvertTo255(EndForce, 9);
-		OutputState[ControllerId].leftTriggerEffect.EffectEx.frequency = 0;
-	}
+    bool bChanged = false;
 
-	if (Hand == EControllerHand::Right || Hand == EControllerHand::AnyHand)
-	{
-		OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::EffectEx;
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.startPosition = ConvertTo255(StartPosition, 8);
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.keepEffect = KeepEffect;
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.beginForce = ConvertTo255(BeginForce, 9);
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.middleForce = ConvertTo255(MiddleForce, 9);
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.endForce = ConvertTo255(EndForce, 9);
-		OutputState[ControllerId].rightTriggerEffect.EffectEx.frequency = 0;
-	}
+    if (Hand == EControllerHand::Left || Hand == EControllerHand::AnyHand)
+    {
 
-	SendOut(ControllerId);
+        // Ensure effect type is set
+        if (OutputState[ControllerId].leftTriggerEffect.effectType != DS5W::_TriggerEffectType::EffectEx)
+        {
+            OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::EffectEx;
+            bChanged = true;
+        }
+
+        // Check if values actually changed
+        if (OutputState[ControllerId].leftTriggerEffect.EffectEx.startPosition != ConvertTo255(StartPosition, 8) ||
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.beginForce != ConvertTo255(BeginForce, 9) ||
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.middleForce != ConvertTo255(MiddleForce, 9) ||
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.endForce != ConvertTo255(EndForce, 9) ||
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.keepEffect != KeepEffect)
+        {
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.startPosition = ConvertTo255(StartPosition, 8);
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.keepEffect = KeepEffect;
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.beginForce = ConvertTo255(BeginForce, 9);
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.middleForce = ConvertTo255(MiddleForce, 9);
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.endForce = ConvertTo255(EndForce, 9);
+            OutputState[ControllerId].leftTriggerEffect.EffectEx.frequency = 0;  // Reset frequency to ensure consistency
+
+            bChanged = true;
+        }
+    }
+
+    if (Hand == EControllerHand::Right || Hand == EControllerHand::AnyHand)
+    {
+
+
+        // Ensure effect type is set
+        if (OutputState[ControllerId].rightTriggerEffect.effectType != DS5W::_TriggerEffectType::EffectEx)
+        {
+            OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::EffectEx;
+            bChanged = true;
+        }
+
+        // Check if values actually changed
+        if (OutputState[ControllerId].rightTriggerEffect.EffectEx.startPosition != ConvertTo255(StartPosition, 8) ||
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.beginForce != ConvertTo255(BeginForce, 9) ||
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.middleForce != ConvertTo255(MiddleForce, 9) ||
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.endForce != ConvertTo255(EndForce, 9) ||
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.keepEffect != KeepEffect)
+        {
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.startPosition = ConvertTo255(StartPosition, 8);
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.keepEffect = KeepEffect;
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.beginForce = ConvertTo255(BeginForce, 9);
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.middleForce = ConvertTo255(MiddleForce, 9);
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.endForce = ConvertTo255(EndForce, 9);
+            OutputState[ControllerId].rightTriggerEffect.EffectEx.frequency = 0;  // Reset frequency
+
+            bChanged = true;
+        }
+    }
+
+    if (bChanged)
+    {
+        PendingOutputUpdates.Add(ControllerId);
+    }
 }
+
 
 void UDualSenseLibrary::NoResitance(int32 ControllerId, const EControllerHand& Hand)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		return;
-	}
+	if (!OutputState.Contains(ControllerId)) return;
+
+	bool bChanged = false;
 
 	if (Hand == EControllerHand::Left || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+		if (OutputState[ControllerId].leftTriggerEffect.effectType != DS5W::_TriggerEffectType::NoResitance)
+		{
+			OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+			bChanged = true;
+		}
 	}
 
 	if (Hand == EControllerHand::Right || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+		if (OutputState[ControllerId].rightTriggerEffect.effectType != DS5W::_TriggerEffectType::NoResitance)
+		{
+			OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+			bChanged = true;
+		}
 	}
 
-	SendOut(ControllerId);
+	if (bChanged)
+	{
+		PendingOutputUpdates.Add(ControllerId);
+	}
 }
 
-void UDualSenseLibrary::ContinuousResitance(int32 ControllerId, int32 StartPosition, int32 Force,
-                                            const EControllerHand& Hand)
+
+void UDualSenseLibrary::ContinuousResitance(int32 ControllerId, int32 StartPosition, int32 Force, const EControllerHand& Hand)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		return;
-	}
+	if (!OutputState.Contains(ControllerId)) return;
+
+	bool bChanged = false;
 
 	if (Hand == EControllerHand::Left || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::ContinuousResitance;
-		OutputState[ControllerId].leftTriggerEffect.Continuous.startPosition = ConvertTo255(StartPosition, 8);
-		OutputState[ControllerId].leftTriggerEffect.Continuous.force = ConvertTo255(Force, 9);
+		if (OutputState[ControllerId].leftTriggerEffect.effectType != DS5W::_TriggerEffectType::ContinuousResitance ||
+			OutputState[ControllerId].leftTriggerEffect.Continuous.startPosition != ConvertTo255(StartPosition, 8) ||
+			OutputState[ControllerId].leftTriggerEffect.Continuous.force != ConvertTo255(Force, 9))
+		{
+			OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::ContinuousResitance;
+			OutputState[ControllerId].leftTriggerEffect.Continuous.startPosition = ConvertTo255(StartPosition, 8);
+			OutputState[ControllerId].leftTriggerEffect.Continuous.force = ConvertTo255(Force, 9);
+			bChanged = true;
+		}
 	}
 
 	if (Hand == EControllerHand::Right || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::ContinuousResitance;
-		OutputState[ControllerId].rightTriggerEffect.Continuous.startPosition = ConvertTo255(StartPosition, 8);
-		OutputState[ControllerId].rightTriggerEffect.Continuous.force = ConvertTo255(Force, 9);
+		if (OutputState[ControllerId].rightTriggerEffect.effectType != DS5W::_TriggerEffectType::ContinuousResitance ||
+			OutputState[ControllerId].rightTriggerEffect.Continuous.startPosition != ConvertTo255(StartPosition, 8) ||
+			OutputState[ControllerId].rightTriggerEffect.Continuous.force != ConvertTo255(Force, 9))
+		{
+			OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::ContinuousResitance;
+			OutputState[ControllerId].rightTriggerEffect.Continuous.startPosition = ConvertTo255(StartPosition, 8);
+			OutputState[ControllerId].rightTriggerEffect.Continuous.force = ConvertTo255(Force, 9);
+			bChanged = true;
+		}
 	}
 
-	SendOut(ControllerId);
+	if (bChanged)
+	{
+		PendingOutputUpdates.Add(ControllerId);
+	}
 }
 
-void UDualSenseLibrary::SectionResitance(int32 ControllerId, int32 StartPosition, int32 EndPosition,
-                                         const EControllerHand& Hand)
+
+void UDualSenseLibrary::SectionResitance(int32 ControllerId, int32 StartPosition, int32 EndPosition, const EControllerHand& Hand)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		UE_LOG(LogTemp, Error, TEXT("SectionResitance: StartPosition %d, EndPosition %d"), StartPosition, EndPosition);
-		return;
-	}
+	if (!OutputState.Contains(ControllerId)) return;
+
+	bool bChanged = false;
 
 	if (Hand == EControllerHand::Left || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
-		OutputState[ControllerId].leftTriggerEffect.Section.startPosition = ConvertTo255(StartPosition, 8);
-		OutputState[ControllerId].leftTriggerEffect.Section.endPosition = ConvertTo255(EndPosition, 8);
+		if (OutputState[ControllerId].leftTriggerEffect.effectType != DS5W::_TriggerEffectType::SectionResitance ||
+			OutputState[ControllerId].leftTriggerEffect.Section.startPosition != ConvertTo255(StartPosition, 8) ||
+			OutputState[ControllerId].leftTriggerEffect.Section.endPosition != ConvertTo255(EndPosition, 8))
+		{
+			OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
+			OutputState[ControllerId].leftTriggerEffect.Section.startPosition = ConvertTo255(StartPosition, 8);
+			OutputState[ControllerId].leftTriggerEffect.Section.endPosition = ConvertTo255(EndPosition, 8);
+			bChanged = true;
+		}
 	}
 
 	if (Hand == EControllerHand::Right || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
-		OutputState[ControllerId].rightTriggerEffect.Section.startPosition = ConvertTo255(StartPosition, 8);
-		OutputState[ControllerId].rightTriggerEffect.Section.endPosition = ConvertTo255(EndPosition, 8);
+		if (OutputState[ControllerId].rightTriggerEffect.effectType != DS5W::_TriggerEffectType::SectionResitance ||
+			OutputState[ControllerId].rightTriggerEffect.Section.startPosition != ConvertTo255(StartPosition, 8) ||
+			OutputState[ControllerId].rightTriggerEffect.Section.endPosition != ConvertTo255(EndPosition, 8))
+		{
+			OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::SectionResitance;
+			OutputState[ControllerId].rightTriggerEffect.Section.startPosition = ConvertTo255(StartPosition, 8);
+			OutputState[ControllerId].rightTriggerEffect.Section.endPosition = ConvertTo255(EndPosition, 8);
+			bChanged = true;
+		}
 	}
 
-
-	SendOut(ControllerId);
+	if (bChanged)
+	{
+		PendingOutputUpdates.Add(ControllerId);
+	}
 }
+
 
 void UDualSenseLibrary::StopEffect(int32 ControllerId, const EControllerHand& Hand)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		return;
-	}
+	if (!OutputState.Contains(ControllerId)) return;
+
+	bool bChanged = false;
 
 	if (Hand == EControllerHand::Left || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+		if (OutputState[ControllerId].leftTriggerEffect.effectType != DS5W::_TriggerEffectType::NoResitance)
+		{
+			OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+			bChanged = true;
+		}
 	}
 
 	if (Hand == EControllerHand::Right || Hand == EControllerHand::AnyHand)
 	{
-		OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+		if (OutputState[ControllerId].rightTriggerEffect.effectType != DS5W::_TriggerEffectType::NoResitance)
+		{
+			OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
+			bChanged = true;
+		}
 	}
 
-	SendOut(ControllerId);
+	if (bChanged)
+	{
+		PendingOutputUpdates.Add(ControllerId);
+	}
 }
+
 
 void UDualSenseLibrary::StopAllEffects(const int32 ControllerId)
 {
-	if (!OutputState.Contains(ControllerId))
+	if (!OutputState.Contains(ControllerId)) return;
+
+	if (OutputState[ControllerId].leftTriggerEffect.effectType == DS5W::_TriggerEffectType::NoResitance &&
+		OutputState[ControllerId].rightTriggerEffect.effectType == DS5W::_TriggerEffectType::NoResitance)
 	{
-		return;
+		return; // No update needed
 	}
 
 	OutputState[ControllerId].leftTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
 	OutputState[ControllerId].rightTriggerEffect.effectType = DS5W::_TriggerEffectType::NoResitance;
-	SendOut(ControllerId);
+
+	PendingOutputUpdates.Add(ControllerId);
 }
+
 
 void UDualSenseLibrary::StopAll(int32 ControllerId)
 {
-	if (!OutputState.Contains(ControllerId))
+	if (!OutputState.Contains(ControllerId)) return;
+
+	DS5W::DS5OutputState& State = OutputState[ControllerId];
+
+	// Check if state is already zeroed
+	if (State.leftRumble == 0 && State.rightRumble == 0 &&
+		State.leftTriggerEffect.effectType == DS5W::_TriggerEffectType::NoResitance &&
+		State.rightTriggerEffect.effectType == DS5W::_TriggerEffectType::NoResitance &&
+		State.lightbar.r == 0 && State.lightbar.g == 0 && State.lightbar.b == 0 &&
+		State.playerLeds.bitmask == 0 && State.microphoneLed == DS5W::MicLed::OFF)
 	{
-		return;
+		return; // No update needed
 	}
 
-	ZeroMemory(&OutputState[ControllerId], sizeof(DS5W::DS5OutputState));
-	SendOut(ControllerId);
+	ZeroMemory(&State, sizeof(DS5W::DS5OutputState));
+
+	PendingOutputUpdates.Add(ControllerId);
 }
+
 
 void UDualSenseLibrary::SetLedPlayerEffects(int32 ControllerId, int32 NumberLeds, int32 BrightnessValue)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		return;
-	}
+	if (!OutputState.Contains(ControllerId)) return;
 
-	OutputState[ControllerId].playerLeds.bitmask = 0x00;
-	SendOut(ControllerId);
-
+	uint8_t NewBitmask = 0x00;
 	NumberLeds = FMath::Clamp(NumberLeds, 0, 3);
-	if (NumberLeds == 1)
-	{
-		OutputState[ControllerId].playerLeds.bitmask = DS5W_OSTATE_PLAYER_LED_LEFT | DS5W_OSTATE_PLAYER_LED_RIGHT;
-	}
+    
+	if (NumberLeds >= 1) NewBitmask |= DS5W_OSTATE_PLAYER_LED_LEFT | DS5W_OSTATE_PLAYER_LED_RIGHT;
+	if (NumberLeds >= 2) NewBitmask |= DS5W_OSTATE_PLAYER_LED_MIDDLE_RIGHT | DS5W_OSTATE_PLAYER_LED_MIDDLE_LEFT;
+	if (NumberLeds == 3) NewBitmask |= DS5W_OSTATE_PLAYER_LED_MIDDLE;
 
-	if (NumberLeds == 2)
-	{
-		OutputState[ControllerId].playerLeds.bitmask = DS5W_OSTATE_PLAYER_LED_LEFT | DS5W_OSTATE_PLAYER_LED_RIGHT;
-		OutputState[ControllerId].playerLeds.bitmask |= DS5W_OSTATE_PLAYER_LED_MIDDLE_RIGHT |
-			DS5W_OSTATE_PLAYER_LED_MIDDLE_LEFT;
-	}
+	DS5W::LedBrightness NewBrightness = DS5W::LedBrightness::LOW;
+	if (BrightnessValue == 1) NewBrightness = DS5W::LedBrightness::MEDIUM;
+	if (BrightnessValue == 2) NewBrightness = DS5W::LedBrightness::HIGH;
 
-	if (NumberLeds == 3)
+	if (OutputState[ControllerId].playerLeds.bitmask != NewBitmask ||
+		OutputState[ControllerId].playerLeds.brightness != NewBrightness)
 	{
-		OutputState[ControllerId].playerLeds.bitmask = DS5W_OSTATE_PLAYER_LED_LEFT | DS5W_OSTATE_PLAYER_LED_RIGHT;
-		OutputState[ControllerId].playerLeds.bitmask |= DS5W_OSTATE_PLAYER_LED_MIDDLE_RIGHT |
-			DS5W_OSTATE_PLAYER_LED_MIDDLE_LEFT;
-		OutputState[ControllerId].playerLeds.bitmask |= DS5W_OSTATE_PLAYER_LED_MIDDLE;
+		OutputState[ControllerId].playerLeds.bitmask = NewBitmask;
+		OutputState[ControllerId].playerLeds.brightness = NewBrightness;
+		PendingOutputUpdates.Add(ControllerId);
 	}
-
-	DS5W::LedBrightness Brightness;
-	switch (BrightnessValue)
-	{
-	case 1:
-		Brightness = DS5W::LedBrightness::MEDIUM;
-		break;
-	case 2:
-		Brightness = DS5W::LedBrightness::HIGH;
-		break;
-	case 3:
-	default:
-		Brightness = DS5W::LedBrightness::LOW;
-		break;
-	}
-	OutputState[ControllerId].playerLeds.brightness = Brightness;
-
-	SendOut(ControllerId);
 }
+
 
 void UDualSenseLibrary::SetLedMicEffects(int32 ControllerId, int32 LedMic)
 {
-	if (!OutputState.Contains(ControllerId))
-	{
-		return;
-	}
+    if (!OutputState.Contains(ControllerId)) return;
 
-	OutputState[ControllerId].microphoneLed = DS5W::MicLed::OFF;
-	if (LedMic == 1)
-	{
-		OutputState[ControllerId].microphoneLed = DS5W::MicLed::ON;
-	}
+    DS5W::MicLed NewMicLedState = DS5W::MicLed::OFF;
+    if (LedMic == 1) NewMicLedState = DS5W::MicLed::ON;
+    if (LedMic == 2) NewMicLedState = DS5W::MicLed::PULSE;
 
-	if (LedMic == 2)
-	{
-		OutputState[ControllerId].microphoneLed = DS5W::MicLed::PULSE;
-	}
-
-	SendOut(ControllerId);
+    if (OutputState[ControllerId].microphoneLed != NewMicLedState)
+    {
+        OutputState[ControllerId].microphoneLed = NewMicLedState;
+        PendingOutputUpdates.Add(ControllerId);
+    }
 }
+
 
 
 void UDualSenseLibrary::SmoothBatteryLevel(int32 ControllerId, uint8_t NewValue)
