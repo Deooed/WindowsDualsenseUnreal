@@ -55,12 +55,6 @@ TSharedPtr<IInputDevice> FWindowsDualsense_ds5wModule::CreateInputDevice(
 		RegisterDevice(i);
 	}
 
-	// DualSenseLibraryInstance->OnDeviceRegistered().AddLambda([&](int32 ControllerId)
-	// {
-	// 	UE_LOG(LogTemp, Log, TEXT("New Device registred: %d"), ControllerId);
-	// 	RegisterDevice(ControllerId);
-	// });
-
 	return DeviceInstances;
 }
 

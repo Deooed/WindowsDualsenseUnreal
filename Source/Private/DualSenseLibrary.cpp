@@ -1,3 +1,8 @@
+// Copyright (c) 2025 Rafael Valotor/Publisher. All rights reserved.
+// Created for: WindowsDualsense_ds5w - Plugin to support DualSense controller on Windows.
+// Planned Release Year: 2025
+
+
 #include "Public/DualSenseLibrary.h"
 
 #include <Windows.h>
@@ -13,7 +18,6 @@ TMap<int32, DS5W::_DS5InputState> UDualSenseLibrary::InputState;
 TMap<int32, DS5W::DS5OutputState> UDualSenseLibrary::OutputState;
 TMap<int32, DS5W::DeviceContext> UDualSenseLibrary::DeviceContexts;
 
-TMap<int32, std::deque<uint8_t>> UDualSenseLibrary::BatteryHistories;
 TMap<int32, bool> UDualSenseLibrary::EnableAccelerometer;
 TMap<int32, bool> UDualSenseLibrary::EnableGyroscope;
 TMap<int32, bool> UDualSenseLibrary::EnableTouch1;
@@ -239,9 +243,6 @@ bool UDualSenseLibrary::UpdateInput(
 		const auto ButtonsAndDpad = InputState[InputDeviceId.GetId()].buttonsAndDpad;
 		const auto ButtonsA = InputState[InputDeviceId.GetId()].buttonsA;
 		const auto ButtonsB = InputState[InputDeviceId.GetId()].buttonsB;
-
-		uint8_t BatteryValue = ((DeviceContexts[InputDeviceId.GetId()]._internal.hidBuffer[0x34] & 0x0F) * 100) / 15;
-		SmoothBatteryLevel(InputDeviceId.GetId(), BatteryValue);
 
 		if (
 			LeftTriggerFeedback.Contains(InputDeviceId.GetId()) &&
@@ -872,8 +873,6 @@ void UDualSenseLibrary::SetLedMicEffects(int32 ControllerId, int32 LedMic)
     }
 }
 
-
-
 void UDualSenseLibrary::SmoothBatteryLevel(int32 ControllerId, uint8_t NewValue)
 {
 	if (!BatteryHistories.Contains(ControllerId))
@@ -918,7 +917,6 @@ unsigned char UDualSenseLibrary::ConvertTo255(unsigned char value, unsigned char
 {
 	return static_cast<unsigned char>((value * 255) / maxInput);
 }
-
 
 int UDualSenseLibrary::ConvertTo255(const float Value)
 {

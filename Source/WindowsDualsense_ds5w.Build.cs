@@ -19,13 +19,12 @@ public class WindowsDualsense_ds5w : ModuleRules
         var dllFullPath = Path.Combine(thirdPartyPath, "ds5w_x64.dll");
         RuntimeDependencies.Add("$(BinaryOutputDir)/ds5w_x64.dll", dllFullPath);
 
-        // Módulos necessários do Unreal Engine
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "ApplicationCore", "InputCore", "InputDevice"});
         
-        PrivateDependencyModuleNames.AddRange(new string[]
-        {
-	        "Slate",
-	        "SlateCore",
-        });
+        // PrivateDependencyModuleNames.AddRange(new string[]
+        // {
+	       //  "Slate",
+	       //  "SlateCore",
+        // });
 	}
 }

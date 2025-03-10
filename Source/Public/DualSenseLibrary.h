@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Rafael Valotor/Publisher. All rights reserved.
+// Created for: WindowsDualsense_ds5w - Plugin to support DualSense controller on Windows.
+// Planned Release Year: 2025
 #pragma once
 
 #include "ds5w.h"
@@ -81,7 +84,6 @@ private:
 	static TMap<int32, bool> EnableGyroscope;
 	static TMap<int32, bool> EnableTouch1;
 	static TMap<int32, bool> EnableTouch2;
-	static TMap<int32,  std::deque<uint8_t>> BatteryHistories;
 
 	static TSet<int32> PendingOutputUpdates;
 
@@ -100,7 +102,8 @@ private:
 	static unsigned char CalculateRightRumble(const FForceFeedbackValues& Values);
 
 	// Output
-	//static void SendOut(int32 ControllerId);
+
+	static void SendOut(int32 ControllerId);
 	static void SmoothBatteryLevel(int32 ControllerId, uint8_t NewValue);
 	static int ConvertTo255(float Value);
 	static unsigned char ConvertTo255(unsigned char value, unsigned char maxInput);
